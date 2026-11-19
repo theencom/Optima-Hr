@@ -1,5 +1,11 @@
 
-from hrms.payroll.doctype.salary_slip.salary_slip import SalarySlip, set_loan_repayment, get_period_factor , get_salary_component_data
+from hrms.payroll.doctype.salary_slip.salary_slip import (
+    SalarySlip,
+    set_loan_repayment,
+    get_period_factor,
+    get_salary_component_data,
+    verify_lwp_days_corrected,
+)
 import frappe
 from frappe import _
 from frappe.utils import flt , cint , getdate , add_days , rounded
@@ -119,7 +125,7 @@ class CustomSalarySlip(SalarySlip):
         self.calculate_custom_cost_to_company_ctc()
 
     # @allow_edit_salary_slip
-    def get_working_days_details(self, lwp=None, for_preview=0):
+    def get_working_days_details(self, lwp=None, for_preview=0, lwp_days_corrected=None):
         payroll_settings = frappe.get_cached_value(
             "Payroll Settings",
             None,
@@ -197,15 +203,26 @@ class CustomSalarySlip(SalarySlip):
 
             consider_unmarked_attendance_as = payroll_settings.consider_unmarked_attendance_as or "Present"
 
-            if (
-                payroll_settings.payroll_based_on == "Attendance"
-                and consider_unmarked_attendance_as == "Absent"
-            ):
-                unmarked_days = self.get_unmarked_days(payroll_settings.include_holidays_in_total_working_days)
-                self.absent_days += unmarked_days  # will be treated as absent
-                self.payment_days -= unmarked_days
+            if payroll_settings.payroll_based_on == "Attendance":
+                if consider_unmarked_attendance_as == "Absent":
+                    unmarked_days = self.get_unmarked_days(
+                        payroll_settings.include_holidays_in_total_working_days, holidays
+                    )
+                    self.absent_days += unmarked_days  # will be treated as absent
+                    self.payment_days -= unmarked_days
+                half_absent_days = self.get_half_absent_days(
+                    consider_marked_attendance_on_holidays,
+                    holidays,
+                )
+                self.absent_days += half_absent_days * daily_wages_fraction_for_half_day
+                self.payment_days -= half_absent_days * daily_wages_fraction_for_half_day
         else:
-            self.payment_days = 0  
+            self.payment_days = 0
+
+        # HRMS v16.18+: Payroll Correction can hand back reversed LWP days
+        if lwp_days_corrected and lwp_days_corrected > 0:
+            if verify_lwp_days_corrected(self.employee, self.start_date, self.end_date, lwp_days_corrected):
+                self.payment_days += lwp_days_corrected
     
     # @allow_edit_salary_slip
     def get_payment_days(self, include_holidays_in_total_working_days):
