@@ -144,7 +144,8 @@ def get_custom_fields():
             "fieldname": "identification_document_type",
             "label": _("Identification Document Type"),
             "fieldtype": "Link",
-            "options": "Identification Document Type",
+            # HRMS v16 (Nov 2026) renamed Identification Document Type -> Employee Document Type
+            "options": "Employee Document Type" if frappe.db.exists("DocType", "Employee Document Type") else "Identification Document Type",
             "insert_after": "nationality",
         },
         {
